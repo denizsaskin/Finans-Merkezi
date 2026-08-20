@@ -35,10 +35,9 @@ if (typeof window !== 'undefined' && !window.storage) {
 /* =========================================================================================
    CANLI PİYASA VERİSİ — sunucu fonksiyonu YOK, tarayıcı doğrudan 3 ücretsiz kaynağa gider:
    - Hisseler: Finnhub (VITE_FINNHUB_API_KEY ortam değişkeninden, build sırasında gömülür)
-   - Döviz kuru (USD/TRY, EUR/TRY): Frankfurter — ECB verisi, tamamen ücretsiz, key gerektirmez, CORS açık
-   - Altın (XAU/USD): Gold-API — tamamen ücretsiz, key gerektirmez, CORS açık
-   Bu fonksiyon hem PortfolioDashboard hem ProjectionEngine tarafından, açılışta ve
-   "Güncelle" butonunda çağrılır — böylece uygulama HER AÇILDIĞINDA otomatik taze veri çeker.
+   - Döviz kuru (USD/TRY, EUR/TRY): Frankfurter — api.frankfurter.dev/v1/latest (ESKİ .app/latest
+     adresi 403/CORS sorunu veriyordu, API .dev alan adına ve /v1/ yol yapısına taşınmış — DÜZELTİLDİ)
+   - Altın (XAU/USD): Gold-API — api.gold-api.com/price/XAU
    ========================================================================================= */
 const ALL_SYMBOLS = ['NVDA', 'TSLA', 'GOOGL', 'META', 'SPCX', 'RKLB', 'MU', 'ASTS', 'PLTR', 'AAOI', 'SKHY'];
 
@@ -64,7 +63,7 @@ async function fetchLiveMarketData() {
 
   let usdTry = null, usdEur = null, eurTry = null;
   try {
-    const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=TRY,EUR');
+    const res = await fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=TRY,EUR');
     const fx = await res.json();
     usdTry = fx?.rates?.TRY ?? null;
     usdEur = fx?.rates?.EUR ?? null;
@@ -313,7 +312,6 @@ function PortfolioDashboard() {
   };
 
   useEffect(() => {
-    // Açılışta önce varsa cihazdaki son önbelleği anında göster, sonra taze veri çekmeyi dene
     const cached = loadCachedMarketDataSync();
     if (cached) applyMarketData(cached);
     fetchAllViaClaude();
@@ -346,7 +344,7 @@ function PortfolioDashboard() {
   };
 
   // Bir varlık (hisse veya altın) için güncel değerlendirme + varsa son bilanço verisini
-  // Claude'un web arama yeteneğiyle çeker. key: state anahtarı (sembol veya 'altin'), displayName: aramada kullanılacak isim.
+  // Netlify'daki analyze.js fonksiyonu üzerinden (Anthropic key sunucuda gizli) çeker.
   const fetchAssetAnalysis = async (key, displayName) => {
     setAnalysisLoading(prev => ({ ...prev, [key]: true }));
     setAnalysisError(prev => ({ ...prev, [key]: null }));
@@ -938,7 +936,7 @@ function ProjectionEngine() {
   const [newContribution, setNewContribution] = useState('');
   const [newTotalValue, setNewTotalValue] = useState('');
   const [saveMsg, setSaveMsg] = useState('');
-  const [liveMarket, setLiveMarket] = useState(null); // Portföy sekmesinden bağımsız, kendi canlı verisi
+  const [liveMarket, setLiveMarket] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -962,7 +960,6 @@ function ProjectionEngine() {
     })();
   }, []);
 
-  // Canlı fiyat varsa onu, yoksa koddaki statik yedek değeri kullanan yardımcılar
   const priceFor = (symbol) => (liveMarket?.prices?.[symbol]) || MARKET_DATA.prices[symbol] || 0;
   const gramAltinPrice = liveMarket?.gramAltinTry || MARKET_DATA.prices.GRAM_ALTIN_TRY;
   const liveEurTry = liveMarket?.eurTry || MARKET_DATA.eurTry;
