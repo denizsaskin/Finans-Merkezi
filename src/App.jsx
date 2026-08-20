@@ -39,15 +39,17 @@ if (typeof window !== 'undefined' && !window.storage) {
      adresi 403/CORS sorunu veriyordu, API .dev alan adına ve /v1/ yol yapısına taşınmış — DÜZELTİLDİ)
    - Altın (XAU/USD): Gold-API — api.gold-api.com/price/XAU
    ========================================================================================= */
-const ALL_SYMBOLS = ['NVDA', 'TSLA', 'GOOGL', 'META', 'SPCX', 'RKLB', 'MU', 'ASTS', 'PLTR', 'AAOI', 'SKHY'];
+const ALL_SYMBOLS = ['NVDA', 'TSLA', 'GOOGL', 'META', 'SPCX', 'RKLB', 'MU', 'ASTS', 'PLTR', 'AAOI', 'SKHY', 'EOSE'];
 
-async function fetchLiveMarketData() {
+// symbols verilmezse varsayılan listeyi kullanır; verilirse (örn. kullanıcının eklediği yeni hisseler dahil
+// güncel pozisyon listesi) onu kullanır — böylece sonradan eklenen hisseler de fiyat güncellemesine dahil olur.
+async function fetchLiveMarketData(symbols = ALL_SYMBOLS) {
   const finnhubKey = import.meta.env.VITE_FINNHUB_API_KEY;
   const prices = {};
 
   if (finnhubKey) {
     const stockResults = await Promise.all(
-      ALL_SYMBOLS.map(async (sym) => {
+      symbols.map(async (sym) => {
         try {
           const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${finnhubKey}`);
           if (!res.ok) return [sym, null];
@@ -96,6 +98,22 @@ function loadCachedMarketDataSync() {
     return raw ? JSON.parse(raw) : null;
   } catch (e) {
     return null;
+  }
+}
+
+// Kullanıcı yeni bir hisse eklerken sadece sembolü (örn. "EOSE") yazdığında, Finnhub'ın şirket
+// profili uç noktasından tam şirket adını ("Eos Energy Enterprises" gibi) otomatik çeker.
+// Bulunamazsa ya da key yoksa, sembolü olduğu gibi isim olarak kullanır (arayüz bozulmaz).
+async function resolveStockName(symbol) {
+  const finnhubKey = import.meta.env.VITE_FINNHUB_API_KEY;
+  if (!finnhubKey) return symbol;
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`);
+    if (!res.ok) return symbol;
+    const data = await res.json();
+    return (data && data.name) ? data.name : symbol;
+  } catch (e) {
+    return symbol;
   }
 }
 
@@ -173,6 +191,7 @@ const STOCK_META = {
   PLTR: { name: 'Palantir' },
   AAOI: { name: 'Applied Optoelectronics' },
   SKHY: { name: 'SK Hynix (ADR)' },
+  EOSE: { name: 'Eos Energy Enterprises' },
 };
 
 const TIER_PLANS = {
@@ -192,24 +211,29 @@ const DEFAULT_TIER_PLAN = {
 const DEFAULT_POSITIONS = {
   eurCash: { name: 'EUR Nakit', amount: 10000 },
   // Hisse satışından gelen, tekrar hisseye yatırılmak üzere bekleyen nakit — genel EUR Nakit'ten ayrı, ABD Hisseleri bölümünde gösterilir.
-  stockCash: { name: 'Hisse Satış Nakdi (yeniden yatırılacak)', amount: 1.79 },
+  stockCash: { name: 'Hisse Satış Nakdi (yeniden yatırılacak)', amount: 741.76 },
   // Kapatılan pozisyonlardan realize edilen kâr/zarar geçmişi — kalıcı bir kayıt, hisseler silinse de burada kalır.
   realizedGains: [
     { symbol: 'AAOI', date: '17 Ağustos 2026', amount: 26.32 },
     { symbol: 'SKHY', date: '17 Ağustos 2026', amount: 12.14 },
+    { symbol: 'RKLB', date: '20 Ağustos 2026 (zarar kes)', amount: -104.96 },
+    { symbol: 'ASTS', date: '20 Ağustos 2026 (zarar kes)', amount: -64.34 },
+    { symbol: 'SPCX', date: '20 Ağustos 2026 (zarar kes)', amount: 8.74 },
+    { symbol: 'AAOI', date: '20 Ağustos 2026 (zarar kes)', amount: -6.84 },
   ],
   altin: { name: 'Altın', qty: 13, unit: 'gram', costTotal: 81500 },
   stocks: [
+    { symbol: 'SPCX', qty: 5, cost: 132.72, broker: 'Trade Republic (Einstandskurs €114,66)' },
+    { symbol: 'RKLB', qty: 15, cost: 72.31, broker: 'Trade Republic (Einstandskurs €62,47)' },
+    { symbol: 'ASTS', qty: 10, cost: 64.36, broker: 'Trade Republic (Einstandskurs €55,60)' },
+    { symbol: 'EOSE', qty: 20, cost: 3.44, broker: 'Trade Republic (Einstandskurs €2,97)', name: 'Eos Energy Enterprises' },
     { symbol: 'NVDA', qty: 0, cost: 0, broker: '' },
     { symbol: 'TSLA', qty: 0, cost: 0, broker: '' },
     { symbol: 'GOOGL', qty: 0, cost: 0, broker: '' },
     { symbol: 'META', qty: 0, cost: 0, broker: '' },
-    { symbol: 'SPCX', qty: 1, cost: 123.26, broker: 'Trade Republic (€106,62, +7,82%)' },
-    { symbol: 'RKLB', qty: 27.006441, cost: 76.11, broker: 'Trade Republic (Einstandskurs €65,75)' },
     { symbol: 'MU', qty: 0, cost: 0, broker: '' },
-    { symbol: 'ASTS', qty: 17, cost: 68.78, broker: 'Trade Republic (Einstandskurs €59,42)' },
     { symbol: 'PLTR', qty: 0, cost: 0, broker: '' },
-    { symbol: 'AAOI', qty: 1.07218, cost: 134.05, broker: 'Trade Republic (Einstandskurs €115,81, 8€ ek alım sonrası)' },
+    { symbol: 'AAOI', qty: 0, cost: 0, broker: 'Kapatıldı — $128,81\'den zarar-kes satışı, -$7,92 (-%5,4) zarar, 20 Ağustos' },
     { symbol: 'SKHY', qty: 0, cost: 0, broker: 'Kapatıldı — €151,00\'den satıldı, net €61,53 alındı, gerçek kâr +€12,14 (+%22,48), 17 Ağustos' },
   ],
 };
@@ -222,6 +246,24 @@ const getRates = () => ({
 });
 const usdToEurDisplay = (n) => fmtEUR((n || 0) * getRates().usdEur);
 const tlToEurDisplay = (n) => fmtEUR((n || 0) / getRates().eurTry);
+
+// Son 30 günün kapanış fiyatlarından basit bir SVG çizgi grafiği çizer (kütüphane gerekmez)
+function Sparkline({ data, color }) {
+  if (!data || data.length < 2) return null;
+  const w = 64, h = 24, pad = 2;
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = max - min || 1;
+  const points = data.map((v, i) => {
+    const x = pad + (i / (data.length - 1)) * (w - pad * 2);
+    const y = h - pad - ((v - min) / range) * (h - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function PortfolioDashboard() {
   const [positions, setPositions] = useState(DEFAULT_POSITIONS);
@@ -245,6 +287,23 @@ function PortfolioDashboard() {
   const [analysisError, setAnalysisError] = useState({});
   const [claudeRefreshing, setClaudeRefreshing] = useState(false);
   const [claudeRefreshMsg, setClaudeRefreshMsg] = useState('');
+
+  // Yeni hisse ekleme (sembol → otomatik isim çözümleme + arama önerileri)
+  const [newStockSymbol, setNewStockSymbol] = useState('');
+  const [newStockQty, setNewStockQty] = useState('');
+  const [newStockCost, setNewStockCost] = useState('');
+  const [stockSuggestions, setStockSuggestions] = useState([]);
+  const [addingStock, setAddingStock] = useState(false);
+  const [addStockMsg, setAddStockMsg] = useState('');
+
+  // Sırayı hedef pozisyona taşımak için her satırda gösterilen küçük "şu sıraya git" kutusu
+  const [moveToInput, setMoveToInput] = useState({});
+
+  // Sparkline (son 30 gün mini fiyat eğrisi) — sembol başına bir kere çekilip önbelleğe alınır
+  const [sparklines, setSparklines] = useState({});
+
+  // Yedekten geri yükleme için gizli dosya seçici referansı
+  const fileInputRef = React.useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -289,6 +348,158 @@ function PortfolioDashboard() {
     }
   };
 
+  /* ===== Hisse ekleme: sembol yazınca Finnhub'dan otomatik isim önerisi ===== */
+  const searchStockSuggestions = async (query) => {
+    const finnhubKey = import.meta.env.VITE_FINNHUB_API_KEY;
+    if (!finnhubKey || !query || query.trim().length < 1) { setStockSuggestions([]); return; }
+    try {
+      const res = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${finnhubKey}`);
+      const data = await res.json();
+      const results = (data?.result || [])
+        .filter(r => r.type === 'Common Stock' || !r.type)
+        .slice(0, 6)
+        .map(r => ({ symbol: r.symbol, name: r.description }));
+      setStockSuggestions(results);
+    } catch (e) {
+      setStockSuggestions([]);
+    }
+  };
+
+  const addNewStock = async (forcedSymbol, forcedName) => {
+    const sym = (forcedSymbol || newStockSymbol).trim().toUpperCase();
+    if (!sym) return;
+    setAddingStock(true);
+    setAddStockMsg('');
+    const existing = positions.stocks.find(s => s.symbol === sym);
+    let next;
+    if (existing) {
+      next = {
+        ...positions,
+        stocks: positions.stocks.map(s => s.symbol === sym
+          ? { ...s, qty: newStockQty || s.qty, cost: newStockCost || s.cost }
+          : s),
+      };
+    } else {
+      next = {
+        ...positions,
+        stocks: [...positions.stocks, { symbol: sym, qty: newStockQty || 0, cost: newStockCost || 0, broker: '', name: forcedName || sym }],
+      };
+    }
+    await savePositions(next);
+    setNewStockSymbol(''); setNewStockQty(''); setNewStockCost(''); setStockSuggestions([]);
+    setAddingStock(false);
+    setAddStockMsg(`${sym} listeye eklendi`);
+    setTimeout(() => setAddStockMsg(''), 2500);
+
+    if (!forcedName) {
+      const resolvedName = await resolveStockName(sym);
+      setPositions(prev => {
+        const updated = { ...prev, stocks: prev.stocks.map(s => s.symbol === sym ? { ...s, name: resolvedName } : s) };
+        window.storage?.set('positions_v2', JSON.stringify(updated), false).catch(() => {});
+        return updated;
+      });
+    }
+    fetchAllViaClaude();
+  };
+
+  const removeStock = (symbol) => {
+    const next = { ...positions, stocks: positions.stocks.filter(s => s.symbol !== symbol) };
+    savePositions(next);
+  };
+
+  /* ===== Sıralama: yukarı/aşağı taşı + belirli bir sıraya götür + otomatik sırala ===== */
+  const moveStock = (index, direction) => {
+    const arr = [...positions.stocks];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= arr.length) return;
+    [arr[index], arr[targetIndex]] = [arr[targetIndex], arr[index]];
+    savePositions({ ...positions, stocks: arr });
+  };
+
+  const moveStockToPosition = (fromIndex, toPosition1Based) => {
+    const toIndex = Math.min(Math.max(0, toPosition1Based - 1), positions.stocks.length - 1);
+    if (isNaN(toIndex) || toIndex === fromIndex) return;
+    const arr = [...positions.stocks];
+    const [item] = arr.splice(fromIndex, 1);
+    arr.splice(toIndex, 0, item);
+    savePositions({ ...positions, stocks: arr });
+  };
+
+  const sortStocksBy = (mode) => {
+    const arr = [...positions.stocks];
+    if (mode === 'az') {
+      arr.sort((a, b) => (a.name || a.symbol).localeCompare(b.name || b.symbol));
+    } else if (mode === 'value') {
+      arr.sort((a, b) => {
+        const va = parseNum(a.qty) * (livePrices[a.symbol] || MARKET_DATA.prices[a.symbol] || 0);
+        const vb = parseNum(b.qty) * (livePrices[b.symbol] || MARKET_DATA.prices[b.symbol] || 0);
+        return vb - va;
+      });
+    } else if (mode === 'pnl') {
+      arr.sort((a, b) => {
+        const pa = parseNum(a.cost) > 0 ? (((livePrices[a.symbol] || MARKET_DATA.prices[a.symbol] || 0) - parseNum(a.cost)) / parseNum(a.cost)) : -Infinity;
+        const pb = parseNum(b.cost) > 0 ? (((livePrices[b.symbol] || MARKET_DATA.prices[b.symbol] || 0) - parseNum(b.cost)) / parseNum(b.cost)) : -Infinity;
+        return pb - pa;
+      });
+    }
+    savePositions({ ...positions, stocks: arr });
+  };
+
+  /* ===== Yedekleme / Geri Yükleme ===== */
+  const exportBackup = async () => {
+    const historyRaw = await window.storage?.get('history', false).catch(() => null);
+    const actualsRaw = await window.storage?.get('projection_actuals', false).catch(() => null);
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      positions,
+      history: historyRaw?.value ? JSON.parse(historyRaw.value) : [],
+      projectionActuals: actualsRaw?.value ? JSON.parse(actualsRaw.value) : [],
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `finans-merkezi-yedek-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importBackup = async (file) => {
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      if (backup.positions) await savePositions(backup.positions);
+      if (backup.history) await window.storage?.set('history', JSON.stringify(backup.history), false);
+      if (backup.projectionActuals) await window.storage?.set('projection_actuals', JSON.stringify(backup.projectionActuals), false);
+      setSaveMsg('Yedek geri yüklendi, sayfayı yenile');
+      setTimeout(() => setSaveMsg(''), 4000);
+    } catch (e) {
+      setSaveMsg('Yedek dosyası okunamadı — geçerli bir JSON mu?');
+      setTimeout(() => setSaveMsg(''), 4000);
+    }
+  };
+
+  /* ===== Sparkline: son 30 günün mini fiyat eğrisi (Finnhub candle, sembol başına bir kere) ===== */
+  const fetchSparkline = async (symbol) => {
+    const finnhubKey = import.meta.env.VITE_FINNHUB_API_KEY;
+    if (!finnhubKey || sparklines[symbol]) return;
+    try {
+      const to = Math.floor(Date.now() / 1000);
+      const from = to - 30 * 24 * 60 * 60;
+      const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${from}&to=${to}&token=${finnhubKey}`);
+      const data = await res.json();
+      if (data.s === 'ok' && Array.isArray(data.c) && data.c.length > 1) {
+        setSparklines(prev => ({ ...prev, [symbol]: data.c }));
+      } else {
+        setSparklines(prev => ({ ...prev, [symbol]: null }));
+      }
+    } catch (e) {
+      setSparklines(prev => ({ ...prev, [symbol]: null }));
+    }
+  };
+
   const toggleChart = (symbol, displayName) => {
     const willOpen = !expandedChart[symbol];
     setExpandedChart(prev => ({ ...prev, [symbol]: willOpen }));
@@ -322,7 +533,8 @@ function PortfolioDashboard() {
     setClaudeRefreshing(true);
     setClaudeRefreshMsg('');
     try {
-      const parsed = await fetchLiveMarketData();
+      const ownedSymbols = Array.from(new Set([...ALL_SYMBOLS, ...positions.stocks.map(s => s.symbol)]));
+      const parsed = await fetchLiveMarketData(ownedSymbols);
       const gotStocks = parsed.prices && Object.keys(parsed.prices).length > 0;
       const gotFx = !!parsed.usdTry;
       const gotGold = !!parsed.gramAltinTry;
@@ -389,7 +601,7 @@ function PortfolioDashboard() {
       const coreQty = plan ? Math.round(qty * plan.core * 100) / 100 : null;
       return {
         ...s,
-        name: STOCK_META[s.symbol].name,
+        name: s.name || (STOCK_META[s.symbol] && STOCK_META[s.symbol].name) || s.symbol,
         qty, cost,
         rawQty: s.qty, rawCost: s.cost,
         price, valueUSD, costUSD, pnlPct, plan, tierRows, coreQty,
@@ -428,6 +640,13 @@ function PortfolioDashboard() {
       eurCashAmount, stockCashEUR, realizedGains, realizedGainsTotal, altin,
     };
   }, [positions, livePrices, liveGramAltin]);
+
+  // Sahip olunan hisseler için mini fiyat eğrilerini (sparkline) önceden, sessizce çeker
+  useEffect(() => {
+    if (loading) return;
+    positions.stocks.filter(s => parseNum(s.qty) > 0).forEach(s => fetchSparkline(s.symbol));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, positions.stocks.length]);
 
   const allocationDataUSD = useMemo(() => {
     return computed.stocks.filter(s => s.qty > 0).map(s => ({ name: s.name, value: s.valueUSD }));
@@ -628,29 +847,96 @@ function PortfolioDashboard() {
             </div>
           )}
           {computed.realizedGains.length > 0 && (
-            <div className="rounded-xl p-3 mb-3" style={{ background: '#E7EEE3' }}>
+            <div className="rounded-xl p-3 mb-3" style={{ background: computed.realizedGainsTotal >= 0 ? '#E7EEE3' : '#F5E4DF' }}>
               <div className="flex items-center justify-between mb-1.5">
-                <p style={{ color: INK }} className="text-xs font-semibold">Realize Edilmiş Kâr (satılan pozisyonlar)</p>
-                <p style={{ color: SAGE }} className="text-sm font-bold tabular-nums">+{fmtEUR(computed.realizedGainsTotal)}</p>
+                <p style={{ color: INK }} className="text-xs font-semibold">Realize Edilmiş Kâr/Zarar (satılan pozisyonlar)</p>
+                <p style={{ color: computed.realizedGainsTotal >= 0 ? SAGE : RUST }} className="text-sm font-bold tabular-nums">
+                  {computed.realizedGainsTotal >= 0 ? '+' : '\u2212'}{fmtEUR(Math.abs(computed.realizedGainsTotal))}
+                </p>
               </div>
               <div className="space-y-1">
                 {computed.realizedGains.map((g, i) => (
                   <div key={i} className="flex items-center justify-between text-[11px]" style={{ color: MUTED }}>
                     <span>{g.symbol} · {g.date}</span>
-                    <span style={{ color: SAGE }} className="font-medium tabular-nums">+{fmtEUR(g.amount)}</span>
+                    <span style={{ color: g.amount >= 0 ? SAGE : RUST }} className="font-medium tabular-nums">
+                      {g.amount >= 0 ? '+' : '\u2212'}{fmtEUR(Math.abs(g.amount))}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
+          {/* Sıralama ve toplu işlemler */}
+          <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+            <button onClick={() => sortStocksBy('value')} className="text-[11px] px-2 py-1 rounded-lg font-medium" style={{ background: PARCHMENT, color: COPPER }}>Değere göre</button>
+            <button onClick={() => sortStocksBy('pnl')} className="text-[11px] px-2 py-1 rounded-lg font-medium" style={{ background: PARCHMENT, color: COPPER }}>Kâr/Zarara göre</button>
+            <button onClick={() => sortStocksBy('az')} className="text-[11px] px-2 py-1 rounded-lg font-medium" style={{ background: PARCHMENT, color: COPPER }}>A-Z</button>
+            <button onClick={exportBackup} className="text-[11px] px-2 py-1 rounded-lg font-medium ml-auto" style={{ background: PARCHMENT, color: SAGE }}>Yedekle</button>
+            <button onClick={() => fileInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded-lg font-medium" style={{ background: PARCHMENT, color: SAGE }}>Geri Yükle</button>
+            <input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }}
+              onChange={e => { if (e.target.files?.[0]) importBackup(e.target.files[0]); e.target.value = ''; }} />
+          </div>
+
+          {editMode && (
+            <div className="rounded-xl p-3 mb-3" style={{ background: PARCHMENT, border: `1px dashed ${SAGE}` }}>
+              <p style={{ color: INK }} className="text-xs font-semibold mb-2">Yeni Hisse Ekle</p>
+              <div className="relative mb-2">
+                <input type="text" value={newStockSymbol}
+                  onChange={e => { const v = e.target.value.toUpperCase(); setNewStockSymbol(v); searchStockSuggestions(v); }}
+                  placeholder="Sembol (örn. EOSE) ya da şirket adı yaz"
+                  className="w-full text-sm rounded-lg px-2 py-1.5 border" style={{ borderColor: '#DDD5C2' }} />
+                {stockSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 mt-1 rounded-lg shadow-md z-10" style={{ background: CARD, border: '1px solid #DDD5C2' }}>
+                    {stockSuggestions.map(sug => (
+                      <button key={sug.symbol} onClick={() => { setNewStockSymbol(sug.symbol); setStockSuggestions([]); }}
+                        className="w-full text-left px-2 py-1.5 text-xs" style={{ borderBottom: '1px solid #EEE8DA' }}>
+                        <span style={{ color: INK, fontWeight: 600 }}>{sug.symbol}</span>
+                        <span style={{ color: MUTED }}> — {sug.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 mb-2">
+                <input type="text" inputMode="decimal" value={newStockQty} onChange={e => setNewStockQty(e.target.value)}
+                  placeholder="Adet" className="flex-1 text-sm rounded-lg px-2 py-1.5 border" style={{ borderColor: '#DDD5C2' }} />
+                <input type="text" inputMode="decimal" value={newStockCost} onChange={e => setNewStockCost(e.target.value)}
+                  placeholder="Maliyet ($)" className="flex-1 text-sm rounded-lg px-2 py-1.5 border" style={{ borderColor: '#DDD5C2' }} />
+              </div>
+              <button onClick={() => addNewStock()} disabled={addingStock || !newStockSymbol.trim()}
+                className="w-full py-2 rounded-lg text-sm font-medium" style={{ background: SAGE, color: '#fff', opacity: addingStock ? 0.6 : 1 }}>
+                {addingStock ? 'Ekleniyor...' : '+ Listeye Ekle'}
+              </button>
+              {addStockMsg && <p className="text-[11px] mt-1.5 text-center" style={{ color: SAGE }}>{addStockMsg}</p>}
+            </div>
+          )}
+
           <div className="space-y-3">
-            {computed.stocks.map((s) => {
+            {computed.stocks.map((s, sIndex) => {
               const hasPlan = !!s.plan && s.qty > 0 && s.cost > 0;
               const isOpen = !!expandedTiers[s.symbol];
               const isChartOpen = !!expandedChart[s.symbol];
               const nextTier = s.tierRows.find(t => !t.reached);
               return (
                 <div key={s.symbol} className="pb-3" style={{ borderBottom: '1px solid #EEE8DA' }}>
+                  {editMode && (
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <button onClick={() => moveStock(sIndex, -1)} disabled={sIndex === 0}
+                        className="text-xs px-1.5 py-0.5 rounded" style={{ background: PARCHMENT, color: sIndex === 0 ? '#C9C2AE' : COPPER }}>▲</button>
+                      <button onClick={() => moveStock(sIndex, 1)} disabled={sIndex === computed.stocks.length - 1}
+                        className="text-xs px-1.5 py-0.5 rounded" style={{ background: PARCHMENT, color: sIndex === computed.stocks.length - 1 ? '#C9C2AE' : COPPER }}>▼</button>
+                      <span className="text-[10px]" style={{ color: MUTED }}>sıra:</span>
+                      <input type="text" inputMode="numeric" placeholder={String(sIndex + 1)}
+                        value={moveToInput[s.symbol] ?? ''}
+                        onChange={e => setMoveToInput(prev => ({ ...prev, [s.symbol]: e.target.value }))}
+                        className="w-10 text-[11px] rounded px-1 py-0.5 border text-center" style={{ borderColor: '#DDD5C2' }} />
+                      <button onClick={() => { moveStockToPosition(sIndex, parseInt(moveToInput[s.symbol], 10)); setMoveToInput(prev => ({ ...prev, [s.symbol]: '' })); }}
+                        className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: SAGE, color: '#fff' }}>Git</button>
+                      <button onClick={() => removeStock(s.symbol)}
+                        className="text-[10px] px-1.5 py-0.5 rounded font-medium ml-auto" style={{ background: '#F5E4DF', color: RUST }}>Sil</button>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mb-1">
                     <span style={{ color: INK }} className="text-sm font-medium flex items-center gap-1.5">
                       {s.name} <span style={{ color: MUTED }}>({s.symbol})</span>
@@ -661,15 +947,18 @@ function PortfolioDashboard() {
                         <span style={{ background: '#F5E4DF', color: '#A63D2F', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '2px 7px' }}>SAT</span>
                       )}
                     </span>
-                    {s.qty > 0 && (
-                      <span style={{ color: s.pnlPct >= 0 ? SAGE : RUST }} className="text-xs font-semibold flex items-center gap-1">
-                        {s.pnlPct >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                        {fmtPct(s.pnlPct)}
-                        <span style={{ fontWeight: 500 }}>
-                          ({s.valueUSD - s.costUSD >= 0 ? '+' : '\u2212'}{showEur ? usdToEurDisplay(Math.abs(s.valueUSD - s.costUSD)) : fmtUSD(Math.abs(s.valueUSD - s.costUSD))})
+                    <div className="flex items-center gap-2">
+                      {sparklines[s.symbol] && <Sparkline data={sparklines[s.symbol]} color={s.pnlPct >= 0 ? SAGE : RUST} />}
+                      {s.qty > 0 && (
+                        <span style={{ color: s.pnlPct >= 0 ? SAGE : RUST }} className="text-xs font-semibold flex items-center gap-1">
+                          {s.pnlPct >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                          {fmtPct(s.pnlPct)}
+                          <span style={{ fontWeight: 500 }}>
+                            ({s.valueUSD - s.costUSD >= 0 ? '+' : '\u2212'}{showEur ? usdToEurDisplay(Math.abs(s.valueUSD - s.costUSD)) : fmtUSD(Math.abs(s.valueUSD - s.costUSD))})
+                          </span>
                         </span>
-                      </span>
-                    )}
+                      )}
+                    </div>
                   </div>
                   {editMode ? (
                     <div className="flex gap-2 mt-2">
@@ -942,9 +1231,10 @@ function ProjectionEngine() {
     (async () => {
       const hasStorage = typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
       if (!hasStorage) { setLoading(false); return; }
+      let loadedPositions = DEFAULT_POSITIONS;
       try {
         const pos = await window.storage.get('positions_v2', false);
-        if (pos && pos.value) setPositions(JSON.parse(pos.value));
+        if (pos && pos.value) { loadedPositions = JSON.parse(pos.value); setPositions(loadedPositions); }
       } catch (e) { /* varsayılan pozisyonlar kullanılır */ }
       try {
         const act = await window.storage.get('projection_actuals', false);
@@ -953,7 +1243,8 @@ function ProjectionEngine() {
       const cached = loadCachedMarketDataSync();
       if (cached) setLiveMarket(cached);
       try {
-        const fresh = await fetchLiveMarketData();
+        const ownedSymbols = Array.from(new Set([...ALL_SYMBOLS, ...loadedPositions.stocks.map(s => s.symbol)]));
+        const fresh = await fetchLiveMarketData(ownedSymbols);
         setLiveMarket(fresh);
       } catch (e) { /* canlı veri alınamazsa statik yedek kullanılır */ }
       setLoading(false);
